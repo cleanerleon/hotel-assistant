@@ -1,72 +1,16 @@
 import json
 import re
-import sqlalchemy
-from typing import List
-from typing import Optional
-from sqlalchemy import Table, Column
-from sqlalchemy import ForeignKey
-from sqlalchemy import String
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.orm import Mapped
-from sqlalchemy.orm import mapped_column
-from sqlalchemy.orm import relationship
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from data import Base, HotelType, Subway, FacType, Hotel
 
 hotel_path = r'hotel-data/hotel.json'
-
-class Base(DeclarativeBase):
-    pass
-
-class HotelType(Base):
-    # {'经济型', '舒适型', '豪华型', '高档型'}
-    __tablename__ = "hotel_type"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(3), unique=True)
-    hotels: Mapped[List["Hotel"]] = relationship(
-        back_populates="hotel_type", cascade="all, delete-orphan"
-    )
-
-class Subway(Base):
-    __tablename__ = "subway"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(6), unique=True)   
-    hotels: Mapped[List["Hotel"]] = relationship(
-        back_populates="subway", cascade="all, delete-orphan"
-    )
-
-hotel_fac_table = Table(
-    "hotel_fac",
-    Base.metadata,
-    Column("hotel_id", ForeignKey("hotel.id")),
-    Column("fac_id", ForeignKey("fac_type.id")),
-)
-
-class FacType(Base):
-    __tablename__ = "fac_type"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(10), unique=True) 
-    hotels: Mapped[List["Hotel"]] = relationship(secondary=hotel_fac_table, back_populates="facs")
-
-class Hotel(Base):
-    __tablename__ = "hotel"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(10), unique=True)
-    address: Mapped[str] = mapped_column(String(128))
-    phone: Mapped[str] = mapped_column(String(12))
-    price: Mapped[float]
-    rating: Mapped[float]
-    type_id: Mapped[int] = mapped_column(ForeignKey("hotel_type.id"))
-    hotel_type: Mapped[HotelType] = relationship(back_populates="hotels")
-    subway_id: Mapped[int] = mapped_column(ForeignKey("subway.id"))
-    subway: Mapped[Subway] = relationship(back_populates="hotels")
-    facs: Mapped[List[FacType]] = relationship(secondary=hotel_fac_table, back_populates="hotels")
 
 def get_hotel_data():
     with open(hotel_path, 'r') as f:
         return json.load(f)
 
-def load_hotel_data():
+def gen_hotel_db():
     hotel_types = dict()
     subways = dict()
     facilities = dict()
@@ -84,7 +28,7 @@ def load_hotel_data():
         m = re.search(ptn, subway)
         if m is None:
             raise Exception('Unknown subway')
-        name = m.group(1)
+        name = m.group(1) + '地铁站'
         subway = subways.get(name)
         if subway is None:
             subway = Subway(name=name)
@@ -96,37 +40,37 @@ def load_hotel_data():
             raise Exception('Unknown facility')
         items = seps[1].split(';')
         items = [item for item in items if item.strip() != '']
-        extra_items = []
+        # extra_items = []
         facs = []
         for item in items:
-            if item == '公共区域和部分房间提供wifi':
-                extra_items.extend(['公共区域提供wifi', '部分房间提供wifi'])
-                continue
-            if item == '酒店各处提供wifi':
-                extra_items.extend(['公共区域提供wifi', '所有房间提供wifi'])
-                continue
+            # if item == '公共区域和部分房间提供wifi':
+            #     extra_items.extend(['公共区域提供wifi', '部分房间提供wifi'])
+            #     continue
+            # if item == '酒店各处提供wifi':
+            #     extra_items.extend(['公共区域提供wifi', '所有房间提供wifi'])
+            #     continue
             fac = facilities.get(item)
             if fac is None:
                 fac = FacType(name=item)
                 facilities[item] = fac
             facs.append(fac)
-        for item in extra_items:
-            fac = facilities.get(item)
-            if fac is None:
-                fac = FacType(name=item)
-                facilities[item] = fac
-            facs.append(fac)        
+        # for item in extra_items:
+        #     fac = facilities.get(item)
+        #     if fac is None:
+        #         fac = FacType(name=item)
+        #         facilities[item] = fac
+        #     facs.append(fac)        
+        print(facs)
         item = hotel_item
         hotel = Hotel(name=item['name'], hotel_type=hotel_type, address=item['address'], subway=subway, 
                     phone=item['phone'], facs=facs, price=item['price'], rating=item['rating'])
         hotels.append(hotel)
 
-    engine = create_engine("sqlite:///hotel.db", echo=True)
+    engine = create_engine("sqlite:///hotel.db", echo=False)
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         session.add_all(hotels)
         session.commit()
         
 if __name__ == "__main__":
-    # print('hello')
-    load_hotel_data()
+    gen_hotel_db()
